@@ -63,7 +63,7 @@ class DatasetGenerator:
             if col not in categorical_cols:
                 df.loc[:, col] = df.loc[:, col].astype(float)
 
-        df.loc[:, "sex"] = df.loc[:, "sex"].astype(str)
+        #df.loc[:, "sex"] = df.loc[:, "sex"].astype(str)
 
         df = df[use_columns]
         df.loc[:, categorical_cols] = df.loc[:, categorical_cols].apply(
@@ -158,91 +158,100 @@ def validation(loader, model):
 
 if __name__ == "__main__":
     #Load, clean, and split data into pandas
-    data_generator = DatasetGenerator()
-    X_train, y_train, X_test, y_test, sensitive_train = data_generator.train_test_split()
+    for i in range(30):
+        data_generator = DatasetGenerator()
+        X_train, y_train, X_test, y_test, sensitive_train = data_generator.train_test_split()
 
-    #Hyperparameters
-    num_train_var = X_train.shape[1]
-    num_y_classes = len(set(y_train))
-    learning_rate = 0.001
-    num_epochs = 50
-    use_fairness = False
-    alpha = 100 #scalar for fairness penalty
+        #Hyperparameters
+        num_train_var = X_train.shape[1]
+        num_y_classes = len(set(y_train))
+        learning_rate = 0.001
+        num_epochs = 100
+        use_fairness = True
+        alpha = 100 #scalar for fairness penalty
 
-    #device
-    #device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    device = "cpu"
+        #device
+        #device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        device = "cpu"
 
-    #data to torch
-    train_data = TorchDataset(X_train,y_train)
-    train_loader = DataLoader(train_data, batch_size=64, shuffle=False)
+        #data to torch
+        train_data = TorchDataset(X_train,y_train)
+        train_loader = DataLoader(train_data, batch_size=64, shuffle=False)
 
-    test_data = TorchDataset(X_test, y_test)
-    test_loader = DataLoader(test_data, batch_size=64, shuffle=False)
+        test_data = TorchDataset(X_test, y_test)
+        test_loader = DataLoader(test_data, batch_size=64, shuffle=False)
 
-    #Initialize network
-    model = network(num_train_var)
+        #Initialize network
+        model = network(num_train_var)
 
-    criterion = nn.BCEWithLogitsLoss()
-    optimizer = optim.Adam(model.parameters(),lr=learning_rate)
+        criterion = nn.BCEWithLogitsLoss()
+        optimizer = optim.Adam(model.parameters(),lr=learning_rate)
 
-    for epoch in range(num_epochs):
-        # Training
-        print(f"epoch number {epoch}")
-        for batch_idx, (data, targets, sensitive) in enumerate(train_loader):
-            optimizer.zero_grad()
+        for epoch in range(num_epochs):
+            # Training
+            print(f"epoch number {epoch}")
+            for batch_idx, (data, targets, sensitive) in enumerate(train_loader):
+                optimizer.zero_grad()
 
-            data = data.to(device=device)
-            targets = targets.to(device=device)
+                data = data.to(device=device)
+                targets = targets.to(device=device)
 
-            logit = model(data)
+                logit = model(data)
 
-            loss = criterion(logit.view(-1),targets)
+                loss = criterion(logit.view(-1),targets)
 
-            if use_fairness == True:
-                prediction = torch.sigmoid(logit)
-                preds = prediction.detach().cpu().numpy()
-                thresholding = np.array([np.round(num)[0] for num in preds])
-                sensitive = sensitive.detach().cpu().numpy().astype(int)
+                if use_fairness == True:
+                    prediction = torch.sigmoid(logit)
+                    preds = prediction.detach().cpu().numpy()
+                    thresholding = np.array([np.round(num)[0] for num in preds])
+                    sensitive = sensitive.detach().cpu().numpy().astype(int)
 
-                combined_mean = thresholding.mean()
-                single_mean = thresholding[sensitive==1].mean()
+                    combined_mean = thresholding.mean()
+                    single_mean = thresholding[sensitive==1].mean()
 
-                penalty = alpha*(combined_mean-single_mean)**2
+                    penalty = alpha*(combined_mean-single_mean)**2
 
-                loss = loss + penalty
+                    loss = loss + penalty
 
-            loss.backward()
+                loss.backward()
 
-            optimizer.step()
+                optimizer.step()
 
-    print("training done")
+        print("training done")
 
 
-    classifications, predictions, actual = validation(test_loader, model)
+        classifications, predictions, actual = validation(test_loader, model)
 
-    acc = sum(classifications[i] == actual[i] for i in range(len(classifications)))/len(classifications)
-    print(f"accuracy on test set was {acc*100} \%")
-    #Adding outputs to the pandas dataframe for test set
+        acc = sum(classifications[i] == actual[i] for i in range(len(classifications)))/len(classifications)
+        print(f"accuracy on test set was {acc*100} \%")
+        #Adding outputs to the pandas dataframe for test set
 
-    #not sure why X_test["classifications"] = classifications does not work, but it does not, so:
-    col1 = pd.Series(predictions)
-    col2 = pd.Series(classifications).astype(bool)
-    col3 = pd.Series(actual)
-    X_test.insert(loc=0, column='nn_prob', value=col1)
-    X_test.insert(loc=0,column='nn_pred',value=col2)
-    X_test.insert(loc=0,column='credit_score',value=col3)
+        #not sure why X_test["classifications"] = classifications does not work, but it does not, so:
+        col1 = pd.Series(predictions)
+        col2 = pd.Series(classifications).astype(bool)
+        col3 = pd.Series(actual)
+        X_test.insert(loc=0, column='nn_prob', value=col1)
+        X_test.insert(loc=0,column='nn_pred',value=col2)
+        X_test.insert(loc=0,column='credit_score',value=col3)
+        X_test.index.name = "person_id"
 
-    X_test.index.name = "person_id"
-    X_test.to_csv("data/NN_independence_out.csv")
+        subset = pd.DataFrame()
+        subset.insert(loc=0, column='nn_prob', value=col1)
+        subset.insert(loc=0, column='nn_pred', value=col2)
+        subset.insert(loc=0, column='credit_score', value=col3)
+        subset["personal_status"] = X_test["personal_status"]
+        subset.index.name = "person_id"
 
-    subset = pd.DataFrame()
-    subset.insert(loc=0, column='nn_prob', value=col1)
-    subset.insert(loc=0, column='nn_pred', value=col2)
-    subset.insert(loc=0, column='credit_score', value=col3)
-    subset["personal_status"] = X_test["personal_status"]
-    subset.index.name = "person_id"
-    subset.to_csv("data/subset_fair.csv")
+        if i == 0:
+            full_df = X_test.copy(deep =True)
+            subset_df = subset.copy(deep=True)
+        else:
+            full_df = pd.concat([full_df,X_test])
+            subset_df = pd.concat([subset_df,subset])
+        print("round done")
+
+    full_df.to_csv("data/fair_NN_independence_out2.csv")
+    subset_df.to_csv("data/subset_fair2.csv")
 
 
     1+1
