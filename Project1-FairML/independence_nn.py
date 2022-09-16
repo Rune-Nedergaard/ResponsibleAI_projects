@@ -39,11 +39,6 @@ class DatasetGenerator:
             "sex"
         ]
 
-        #Making sure the dependent variable has the correct datatype
-        #df.loc[:, "personal_status"] = df.loc[:, "personal_status"].astype(str)
-        #df.loc[:, "personal_status"] = df.loc[:, "personal_status"].where(df.loc[:, "personal_status"] == "single", 0)
-        #df.loc[:, "personal_status"] = df.loc[:, "personal_status"].where(df.loc[:, "personal_status"] != "single", 1)
-        #df.loc[:, "personal_status"] = df.loc[:, "personal_status"].astype(int)
 
         categorical_cols = ["account_amount",
                             "credit_history",
@@ -170,9 +165,9 @@ if __name__ == "__main__":
     num_train_var = X_train.shape[1]
     num_y_classes = len(set(y_train))
     learning_rate = 0.001
-    num_epochs = 500
-    use_fairness = True
-    alpha = 1000 #scalar for fairness penalty
+    num_epochs = 50
+    use_fairness = False
+    alpha = 100 #scalar for fairness penalty
 
     #device
     #device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -217,15 +212,6 @@ if __name__ == "__main__":
 
                 loss = loss + penalty
 
-
-
-
-
-
-
-
-
-
             loss.backward()
 
             optimizer.step()
@@ -241,18 +227,18 @@ if __name__ == "__main__":
 
     #not sure why X_test["classifications"] = classifications does not work, but it does not, so:
     col1 = pd.Series(predictions)
-    col2 = pd.Series(classifications)
+    col2 = pd.Series(classifications).astype(bool)
     col3 = pd.Series(actual)
-    X_test.insert(loc=0, column='predictions', value=col1)
-    X_test.insert(loc=0,column='classifications',value=col2)
+    X_test.insert(loc=0, column='nn_prob', value=col1)
+    X_test.insert(loc=0,column='nn_pred',value=col2)
     X_test.insert(loc=0,column='credit_score',value=col3)
 
     X_test.index.name = "person_id"
-    X_test.to_csv("data/fair_NN_independence_out.csv")
+    X_test.to_csv("data/NN_independence_out.csv")
 
     subset = pd.DataFrame()
-    subset.insert(loc=0, column='predictions', value=col1)
-    subset.insert(loc=0, column='classifications', value=col2)
+    subset.insert(loc=0, column='nn_prob', value=col1)
+    subset.insert(loc=0, column='nn_pred', value=col2)
     subset.insert(loc=0, column='credit_score', value=col3)
     subset["personal_status"] = X_test["personal_status"]
     subset.index.name = "person_id"
